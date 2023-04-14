@@ -56,7 +56,7 @@ This project is set up like a standard Python project. For an integrated develop
 2. Clone the github repository and navigate to the directory.
 
 ```
-$ git clone https://gitlab.aws.dev/ebs_switchover/ats-ebs.git
+$ git clone https://github.com/aws-samples/ats-ebs.git
 
 $ cd ats-ebs
 ```
