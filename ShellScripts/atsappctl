@@ -1,0 +1,352 @@
+#MIT No Attribution
+
+#Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+
+#!/bin/ksh
+#############################################################################
+#            ATSAPPCTL SCRIPT                                                #
+#                                                                            #
+#Purpose:                                                                    #
+#       Stop and Start Application                                           #
+##############################################################################
+#set -x
+
+. ./common_env
+
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+export LOG_FILE
+EC2_REGION="`aws ec2 describe-availability-zones --output text --query 'AvailabilityZones[0].[RegionName]'`"
+
+USAGE="atsappctl -target_inst <INSTANCE_NAME> -primary_db <GLOBAL_DB_NAME> -action <STOP_APPS/START_APPS/ELBSWITCH>"
+
+if [ "$1" == "" ] || [ "$2" == "" ] || [ "$3" == "" ] || [ "$4" == "" ] || [ "$5" == "" ] || [ "$6" == "" ]; then
+   message "ERROR: Not all arguments are passed"
+   message "Usage is: $USAGE"
+   echo -n 11
+   exit 11
+fi
+
+while [ "$1" != "" ]; do
+    case $1 in
+       -target_inst)          TARGET_INST_NAME=$2; shift 2;;
+       -primary_db)           GLOBAL_DB_NAME=$2; shift 2;;
+       -action)               ACTION=$2;    shift 2;;
+        *)                    message "ERROR: Invalid argument ($1).... exiting."; echo -n 11; exit 11;;
+    esac
+done
+
+ORACLE_SID=$TARGET_INST_NAME
+
+aws ssm get-parameter --name ATS-${TARGET_INST_NAME}-Nodetab --with-decryption --query "Parameter.Value" --region $EC2_REGION|tr -d '"'|sed 's/\\n/\n/g'|sed 's/\\$//g'> tmpfile
+
+APPSPASS=`cat tmpfile|cut -d":" -f11| head -1`
+WLSPASS=`cat tmpfile|cut -d":" -f12| head -1`
+
+if [ -z ${EC2_REGION} ]; then
+   message "ERROR: Unable to fetch the EC2 Region. Check if role assigned to EC2 instance has permission ec2:DescribeAvailabilityZones."
+   echo -n 11
+   exit 11
+fi
+
+if [ -z ${WLSPASS} ]; then
+   message "ERROR: Weblogic Password not found in Parameter Store ATS-${TARGET_INST_NAME}-Nodetab."
+   echo -n 11
+   exit 11
+fi
+
+if [ -z ${APPSPASS} ]; then
+   message "ERROR: Apps Password not found in Parameter Store ATS-${TARGET_INST_NAME}-Nodetab."
+   echo -n 11
+   exit 11
+fi
+
+if [ ! -f apptab ]; then
+touch apptab
+else
+rm apptab
+touch apptab
+fi
+
+while read line
+do
+if [ `echo $line|cut -d":" -f2|grep -i ${GLOBAL_DB_NAME}|wc -l` -gt 0 ]; then
+V1=`echo $line|cut -d":" -f1`
+V2=`echo $line|cut -d":" -f8`
+V3=`echo $line|cut -d":" -f9`
+V4=`echo $line|cut -d":" -f10`
+V5=`echo $line|cut -d":" -f5`
+V6=`echo $line|cut -d":" -f6`
+V7=`echo $line|cut -d":" -f7`
+echo $V1":"$V2":"$V3":"$V4":"$V5":"$V6":"$V7 >> apptab
+fi
+
+done < tmpfile
+
+rm tmpfile
+
+
+if [ -f apptab ]; then
+ APP_BASE_PATH=`cat apptab | grep -w ${TARGET_INST_NAME} |tail -1 | cut -d':' -f3`
+   if [ ${APP_BASE_PATH} ]; then
+     ENVFILE=${APP_BASE_PATH}/EBSapps.env
+   else
+     message "ERROR: apptab file does not have complete details of ${TARGET_INST_NAME}"
+     echo -n 11
+     exit 11
+   fi
+else
+  message "ERROR: apptab file does not exist, check if the file is present in ${SCRIPT_DIR}"
+  echo -n 11
+  exit 11
+fi
+
+function start_apps
+{
+
+#set -x
+
+message "INFO: Starting Application $TARGET_INST_NAME"
+
+
+if [ -f apptab ]; then
+
+NODE=()
+while read line
+do
+ if [ `echo $line | grep -w ${TARGET_INST_NAME} | wc -l` -gt 0 ]; then
+  if [ `echo $line|cut -d":" -f4` == 'P' ]; then
+     PRIMARY_NODE=(`echo $line|cut -d":" -f2`)
+  fi
+  NODE+=(`echo $line|cut -d":" -f2`)
+ fi
+done < apptab
+
+nodecount=${#NODE[*]}
+
+if [ ${PRIMARY_NODE} ];
+then
+ssh -T applmgr@${PRIMARY_NODE}<< EOF
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+$(typeset -f message)
+
+message "INFO: Starting Service on Node ${PRIMARY_NODE}"
+
+if [ -f ${ENVFILE} ]
+then
+
+. ${ENVFILE} run
+
+status_code=$?
+if [ $status_code > 0 ]; then
+message "ERROR: Unable to set environment for application $TARGET_INST_NAME"
+echo -n 11
+exit 11
+fi
+else
+message "ERROR: Application $TARGET_INST_NAME environment file does not exist in the ${ENVFILE}"
+echo -n 11
+exit 11
+fi
+{ echo apps; echo ${APPSPASS}; echo ${WLSPASS}; } | sh \$ADMIN_SCRIPTS_HOME/adstrtal.sh -nopromptmsg
+sleep 10
+EOF
+fi
+
+for ((i=0; i<$nodecount; i++))
+do
+
+if [ ${NODE[$i]} != ${PRIMARY_NODE} ]; then
+
+ssh -T applmgr@${NODE[$i]}<< EOF
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+$(typeset -f message)
+
+message "INFO: Starting Service on Node ${Node[$i]}"
+
+if [ -f ${ENVFILE} ]
+then
+
+. ${ENVFILE} run
+
+status_code=$?
+if [ $status_code > 0 ]; then
+message "ERROR: Unable to set environment for application $TARGET_INST_NAME"
+echo -n 11
+exit 11
+fi
+else
+message "ERROR: Application $TARGET_INST_NAME environment file does not exist in the ${ENVFILE}"
+echo -n 11
+exit 11
+fi
+{ echo apps; echo ${APPSPASS}; echo ${WLSPASS}; } | sh \$ADMIN_SCRIPTS_HOME/adstrtal.sh -nopromptmsg
+sleep 10
+
+EOF
+fi
+done
+
+message "INFO: Started Application ${TARGET_INST_NAME}"
+
+else
+message "ERROR: apptab file does not exist, check if the file is present in ${SCRIPT_DIR}"
+echo -n 11
+exit 11
+
+fi
+
+}
+
+
+function stop_apps
+{
+
+message "INFO: Stopping Application $TARGET_INST_NAME"
+
+if [ -f apptab ]; then
+
+NODE=()
+while read line
+do
+ if [ `echo $line | grep -w ${TARGET_INST_NAME} | wc -l` -gt 0 ]; then
+  if [ `echo $line|cut -d":" -f4` == 'P' ]; then
+     PRIMARY_NODE=(`echo $line|cut -d":" -f2`)
+  fi
+  NODE+=(`echo $line|cut -d":" -f2`)
+ fi
+done < apptab
+
+nodecount=${#NODE[*]}
+
+for ((i=$nodecount-1; i>=0; --i))
+do
+
+if [ ${NODE[$i]} != ${PRIMARY_NODE} ]; then
+
+ssh -T applmgr@${NODE[$i]}<< EOF
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+$(typeset -f message)
+
+message "INFO: Stopping Service on Node ${Node[$i]}"
+
+if [ -f ${ENVFILE} ]
+then
+
+. ${ENVFILE} run
+
+status_code=$?
+if [ $status_code > 0 ]; then
+message "ERROR: Unable to set environment for application $TARGET_INST_NAME"
+echo -n 11
+exit 11
+fi
+else
+message "ERROR: Application $TARGET_INST_NAME environment file does not exist in the ${ENVFILE}"
+echo -n 11
+exit 11
+fi
+{ echo apps; echo ${APPSPASS}; echo ${WLSPASS}; } | sh \$ADMIN_SCRIPTS_HOME/adstpall.sh -nopromptmsg
+
+sleep 10
+
+ps -ef|grep applmgr|grep -v grep |grep -v bash|grep -v sshd|grep -v ssh |grep -v "ps -ef"| grep -v appctl | awk '{print \$2}' | tr " " \n > /tmp/killproc
+
+while read prcs
+do
+kill -9 \$prcs
+done < /tmp/killproc
+
+EOF
+fi
+done
+
+ssh -T applmgr@${PRIMARY_NODE}<< EOF
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+$(typeset -f message)
+
+message "INFO: Stopping Service on Node ${PRIMARY_NODE}"
+
+if [ -f ${ENVFILE} ]
+then
+
+. ${ENVFILE} run
+
+status_code=$?
+if [ $status_code > 0 ]; then
+message "ERROR: Unable to set environment for application $TARGET_INST_NAME"
+echo -n 11
+exit 11
+fi
+else
+message "ERROR: Application $TARGET_INST_NAME environment file does not exist in the ${ENVFILE}"
+echo -n 11
+exit 11
+fi
+
+{ echo apps; echo ${APPSPASS}; echo ${WLSPASS}; } | sh \$ADMIN_SCRIPTS_HOME/adstpall.sh -nopromptmsg
+
+sleep 10
+
+ps -ef|grep applmgr|grep -v grep |grep -v bash|grep -v sshd|grep -v ssh |grep -v "ps -ef"| grep -v appctl | awk '{print \$2}' | tr " " \n > /tmp/killproc
+
+while read prcs
+do
+kill -9 \$prcs
+done < /tmp/killproc
+
+EOF
+
+message "INFO: Stopped Application ${TARGET_INST_NAME}"
+
+else
+message "ERROR: apptab file does not exist, check if the file is present in ${SCRIPT_DIR}"
+echo -n 11
+exit 11
+
+fi
+
+}
+
+function elbswitch
+{
+message "INFO: Switching ELB Configuration."
+
+while read line
+do
+ if [ `echo $line | grep -w ${TARGET_INST_NAME} | wc -l` -gt 0 ]; then
+  if [ `echo $line|cut -d":" -f4` == 'P' ]; then
+     TARGET_GROUP=(`echo $line|cut -d":" -f5`)
+     ELB_NAME=(`echo $line|cut -d":" -f6`)
+     PORT_NUM=(`echo $line|cut -d":" -f7`)
+     break
+  fi
+ fi
+done < apptab
+
+TG_ARN=`aws elbv2 describe-target-groups --name ${TARGET_GROUP} --region ${EC2_REGION} --query 'TargetGroups[*].[TargetGroupArn]' | grep arn | tr -d " " | sed 's/\"//g'`
+ELB_ARN=`aws elbv2 describe-load-balancers --name ${ELB_NAME} --region ${EC2_REGION} --query 'LoadBalancers[*].[LoadBalancerArn]' | grep arn | tr -d " " | sed 's/\"//g'`
+LSNR_ARN=$(aws elbv2 describe-listeners --load-balancer-arn ${ELB_ARN}  --region eu-west-1 --query Listeners[?Port=='`'${PORT_NUM}'`'].[ListenerArn] | grep arn | tr -d " " | sed 's/\"//g')
+
+
+aws elbv2 modify-listener --listener-arn ${LSNR_ARN} --default-actions Type=forward,TargetGroupArn=${TG_ARN}
+
+status_code=$?
+if [ $status_code -gt 0 ]; then
+message "ERROR: Failed to modify listener"
+echo -n 11
+exit 11
+fi
+
+message "INFO: ELB Configuration Switched Successfully."
+
+}
+
+case "$ACTION" in
+         STOP_APPS)              stop_apps;;
+         START_APPS)             start_apps;;
+         ELBSWITCH)              elbswitch;;
+esac
+
+echo -n 0
+exit 0

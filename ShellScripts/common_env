@@ -1,0 +1,14 @@
+SCRIPT_DIR=$HOME/auto_switch
+
+### ERP SPECIFIC ENVIRONMENT VARIABLES
+
+##Function to Write LogFile
+function message
+{
+if [ ! -f ${LOG_FILE} ]; then
+touch ${LOG_FILE}
+fi
+TIME=`date`
+echo "$TIME :  ""$1" >> ${LOG_FILE}
+echo "$TIME :  ""$1"
+}

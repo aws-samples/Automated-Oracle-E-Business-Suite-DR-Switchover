@@ -1,0 +1,117 @@
+#MIT No Attribution
+
+#Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+
+#!/bin/ksh
+##############################################################################
+#            ATSDBCTL SCRIPT                                                 #
+#                                                                            #
+#Purpose:                                                                    #
+#       FETCH CURRENT PRIMARY INSTANCE                                       #
+#       SWITCHOVER DATABASE                                                  #
+##############################################################################
+#set -x
+
+. ./common_env
+
+LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
+export LOG_FILE
+EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed 's/[a-z]$//'`"
+
+USAGE="atsdbctl -target_db <TARGET_DB_NAME> -action <FETCH_PRIMARY/SWITCHOVER_DB>"
+
+if [ "$1" == "" ] || [ "$2" == "" ] || [ "$3" == "" ] || [ "$4" == "" ]; then
+   message "ERROR: Not all arguments are passed"
+   message "Usage is: $USAGE"
+   echo -n 11
+   exit 11
+fi
+
+while [ "$1" != "" ]; do
+    case $1 in
+       -target_db)            TARGET_DB_NAME=$2; shift 2;;
+       -action)               ACTION=$2;    shift 2;;
+        *)                    message "ERROR: Invalid argument ($1).... exiting."; echo -n 11; exit 11;;
+    esac
+done
+
+if [ -z ${EC2_REGION} ]; then
+   message "ERROR: Unable to fetch the EC2 Region. Check if role assigned to EC2 instance has permission ec2:DescribeAvailabilityZones."
+   echo -n 11
+   exit 11
+fi
+
+function fetch_primary
+{
+message "INFO: Fetching Primary Database Information"
+
+if [ `ps -ef | grep pmon | grep -i ${TARGET_DB_NAME} | awk '{print $8}' | cut -d"_" -f3 | grep -iw ${TARGET_DB_NAME} | wc -l` -eq 0 ]; then
+   message "ERROR: Database ${TARGET_DB_NAME} is not running."
+   echo -n 11
+   exit 11
+fi
+
+primary_db=`echo "show configuration;" | dgmgrl / | grep -i Primary | cut -d"-" -f1`
+
+if [ ! $primary_db ]; then
+  message "ERROR: Unable to fetch primary database name."
+  echo -n 11
+  exit 11
+fi
+
+echo $primary_db
+}
+
+function switchover_db
+{
+
+message "INFO: Performing Database Swithcover."
+
+DATABASE="V\$DATABASE"
+bkpstatus=`sqlplus -s / as sysdba << EOF
+set heading off
+set feedback off
+set echo off
+whenever sqlerror exit 4
+whenever oserror exit 1
+select open_mode from ${DATABASE};
+exit
+EOF`
+if [ `echo "${bkpstatus}" | grep -i ORA- | wc -l` -eq 0 ];then
+if [ "`echo ${bkpstatus}`" == "MOUNTED" ];
+then
+primary_db=`echo "show configuration;" | dgmgrl / | grep -i Primary | cut -d"-" -f1`
+standby_db=`echo "show configuration;" | dgmgrl / | grep -i standby | cut -d"-" -f1`
+echo "switchover to $standby_db" | dgmgrl /
+
+status_code=$?
+if [ $status_code -gt 0 ]; then
+message "ERROR: Failed to Switchover The Database"
+echo -n 11
+exit 11
+else
+message "INFO: Successfully Switched The Database"
+echo -n 0
+exit 0
+fi
+else
+message "INFO: Run this Script From Standby If you Need to Swithcover"
+echo -n 0
+exit 0
+fi
+else
+sqlplus -s / as sysdba << EOF
+STARTUP MOUNT;
+EOF
+fi
+}
+
+case "$ACTION" in
+         FETCH_PRIMARY)             fetch_primary;;
+         SWITCHOVER_DB)             switchover_db;;
+esac
+
+echo -n 0
+exit 0
