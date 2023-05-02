@@ -1,14 +1,9 @@
-#MIT No Attribution
-
-#Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-
 #!/bin/ksh
 #############################################################################
 #            ATSAPPCTL SCRIPT                                                #
 #                                                                            #
 #Purpose:                                                                    #
-#       Stop and Start Application                                           #
+#       Stop ,Start Application and Update Application Load Balancer         #
 ##############################################################################
 #set -x
 
@@ -38,25 +33,27 @@ done
 
 ORACLE_SID=$TARGET_INST_NAME
 
-aws ssm get-parameter --name ATS-${TARGET_INST_NAME}-Nodetab --with-decryption --query "Parameter.Value" --region $EC2_REGION|tr -d '"'|sed 's/\\n/\n/g'|sed 's/\\$//g'> tmpfile
+aws ssm get-parameter --name R12-${TARGET_INST_NAME}-Nodetab --with-decryption --query "Parameter.Value" --region $EC2_REGION|tr -d '"'|sed 's/\\n/\n/g'|sed 's/\\$//g'> tmpfile
 
-APPSPASS=`cat tmpfile|cut -d":" -f11| head -1`
-WLSPASS=`cat tmpfile|cut -d":" -f12| head -1`
+PASSPARAM=$(aws secretsmanager get-secret-value --secret-id R12-${TARGET_INST_NAME}-Secret --query SecretString --region $EC2_REGION | tr -d '"' | tr -d '{' | tr -d '}'| sed 's/\\:/|/g'|sed 's/\\//g'|cut -d'|' -f2)
 
-if [ -z ${EC2_REGION} ]; then
-   message "ERROR: Unable to fetch the EC2 Region. Check if role assigned to EC2 instance has permission ec2:DescribeAvailabilityZones."
+if [ -z ${PASSPARAM} ]; then
+   message "Error: Password Secretstore R12-${TARGET_INST_NAME}-Secret cannot be found or does not have passwords stored"
    echo -n 11
    exit 11
 fi
 
+APPSPASS=`echo ${PASSPARAM}|cut -d":" -f2`
+WLSPASS=`echo ${PASSPARAM}|cut -d":" -f4`
+
 if [ -z ${WLSPASS} ]; then
-   message "ERROR: Weblogic Password not found in Parameter Store ATS-${TARGET_INST_NAME}-Nodetab."
+   message "ERROR: Weblogic Password not found in Secretstore R12-${TARGET_INST_NAME}-Secret."
    echo -n 11
    exit 11
 fi
 
 if [ -z ${APPSPASS} ]; then
-   message "ERROR: Apps Password not found in Parameter Store ATS-${TARGET_INST_NAME}-Nodetab."
+   message "ERROR: Apps Password not found in Secretstore R12-${TARGET_INST_NAME}-Secret."
    echo -n 11
    exit 11
 fi
@@ -318,7 +315,7 @@ do
   if [ `echo $line|cut -d":" -f4` == 'P' ]; then
      TARGET_GROUP=(`echo $line|cut -d":" -f5`)
      ELB_NAME=(`echo $line|cut -d":" -f6`)
-     PORT_NUM=(`echo $line|cut -d":" -f7`)
+     PORT_NUM=(`echo $line|cut -d":" -f7`) 
      break
   fi
  fi

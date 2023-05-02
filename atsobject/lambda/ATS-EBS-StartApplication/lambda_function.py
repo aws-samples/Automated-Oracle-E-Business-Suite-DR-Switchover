@@ -31,7 +31,7 @@ def lambda_handler(event, context):
                  )
     
     response_ssm = ssm.get_parameters(
-                            Names=['ATS-'+tgt_db+'-Nodetab'],
+                            Names=['R12-'+tgt_db+'-Nodetab'],
                             WithDecryption=True
                             ).get("Parameters")
     

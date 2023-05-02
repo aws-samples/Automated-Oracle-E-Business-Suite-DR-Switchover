@@ -35,17 +35,44 @@ This project will create the following in your AWS cloud environment specified:
     The naming convention of the primary database should be ATS-<>ENVNAME<>-Nodetab with parameter store type SecureString. For example if the environment name is VIS, then the AWS Parameter Store should be named ATS-VIS-Nodetab
 
     The values in the AWS Parameter Store should contain the following information in the specified order for both the Primary and Standby environments, as well as for each E-Biz virtual hostname. The values are separated by ‘:’
-    EnvName:Primary DB Unique Name:Primary DB EC2 Unique Hostname:Primary App EC2 Unique Hostname:ALB Target Group Name For Primary App EC2 Instances:ALB Name:ALB Listener Port:Application Logical Hostname:Application Base Path:(P)rimary/(S)econdary Application Node:Apps Password:Weblogic Password
+    EnvName:Primary DB Unique Name:Primary DB EC2 Unique Hostname:Primary App EC2 Unique Hostname:ALB Target Group Name For Primary App EC2 Instances:ALB Name:ALB Listener Port:Application Logical Hostname:Application Base Path:(P)rimary/(S)econdary Application Node
 
-    EnvName:Standby DB Unique Name:Standby DB EC2 Unique Hostname:Standby App EC2 Unique Hostname:ALB Target Group Name For Standby App EC2 Instances:ALB Name:ALB Listener Port:Application Logical Hostname:Application Base Path:(P)rimary/(S)econdary Application Node:Apps Password:Weblogic Password
+    EnvName:Standby DB Unique Name:Standby DB EC2 Unique Hostname:Standby App EC2 Unique Hostname:ALB Target Group Name For Standby App EC2 Instances:ALB Name:ALB Listener Port:Application Logical Hostname:Application Base Path:(P)rimary/(S)econdary Application Node
 
     The following are sample entries for a two-node application server configured with AWS Custom RDS for both primary and standby configuration.
 
-    VIS:VIS_P:EBIZ-P-VIS-DB-AZ1:EBIZ-P-VIS-APP-01:TGP-VIS-PRM:ALB-VIS-PRM:443:EBSAPP01:/fh01/VIS:P:apps:wls123
-    VIS:VIS_P:EBIZ-P-VIS-DB-AZ1:EBIZ-P-VIS-APP-01:TGP-VIS-PRM:ALB-VIS-PRM:443:EBSAPP02:/fh01/VIS:S:apps:wls123
-    VIS:VIS_S:EBIZ-S-VIS-DB-AZ2:EBIZ-S-VIS-APP-01:TGP-VIS-STBY:ALB-VIS-STBY:443:EBSAPP01:/fh01/VIS:P:apps:wls123
-    VIS:VIS_S:EBIZ-S-VIS-DB-AZ2:EBIZ-S-VIS-APP-01:TGP-VIS-STBY:ALB-VIS-STBY:443:EBSAPP02:/fh01/VIS:S:apps:wls123
+    VIS:VIS_P:EBIZ-P-VIS-DB-AZ1:EBIZ-P-VIS-APP-01:TGP-VIS-PRM:ALB-VIS-PRM:443:EBSAPP01:/fh01/VIS:P
+    VIS:VIS_P:EBIZ-P-VIS-DB-AZ1:EBIZ-P-VIS-APP-01:TGP-VIS-PRM:ALB-VIS-PRM:443:EBSAPP02:/fh01/VIS:S
+    VIS:VIS_S:EBIZ-S-VIS-DB-AZ2:EBIZ-S-VIS-APP-01:TGP-VIS-STBY:ALB-VIS-STBY:443:EBSAPP01:/fh01/VIS:P
+    VIS:VIS_S:EBIZ-S-VIS-DB-AZ2:EBIZ-S-VIS-APP-01:TGP-VIS-STBY:ALB-VIS-STBY:443:EBSAPP02:/fh01/VIS:S
 
+4.  An AWS Secrets Manager Secret to store Oracle E-Business suite credentials
+
+    The naming convention of the secret should be R12-<>EnvName<>-Secret with secret type Other type of secret. For example if the environment name is VIS, then the AWS Secrets Manager Secrets name should be R12-VIS-Secret.
+
+    The usernames and passwords in the AWS Secrets Manager Secret should be strictly stored in the below sequential order. The values are separated by ‘:’
+
+    The automation reads the AWS Secrets Manager Secret during the switchover/failover process to stop and restart the application services. The automation logic assumes that the first password is always the system database user password, that the second password is always the apps password, that the third password is always the sysadmin user password, and that the fourth password is always the weblogic user password. As a result, the order and sequence of storing the username and password are critical for automation.
+
+    Usernames should be stored in the below order in Secret Key field. 
+    system:apps:sysadmin:weblogic:ebs_system:custom
+
+    Passwords for the aforementioned users should be stored in the Secret Value field in the same order. The following are some sample passwords to demonstrate how they are stored in the Secret Key field in the same order as the username.
+
+    system_123:apps_234:sysadmin_121:weblogic_324:ebs_system_3123:custom_123
+
+    Note: The user ebs_system is introduced after AD TXK 11 patching in Oracle E-Business Suite. If you are in prior version of AD TXK then you may skip that user in the sequence.
+
+5. Role for EC2 instances that run Oracle E-Business Suite Environment.
+    Add the policy statement actions listed below to the existing role that is assigned to all AWS EC2 instances of Oracle E-Business Suite database and application. These actions are used in automation scripts to perform switchover/failover activities.
+
+    "elasticloadbalancing:DescribeLoadBalancers",
+    "elasticloadbalancing:ModifyListener",
+    "secretsmanager:GetSecretValue",
+    "elasticloadbalancing:DescribeListeners",
+    "ec2:DescribeAvailabilityZones",
+    "secretsmanager:PutSecretValue",
+    "elasticloadbalancing:DescribeTargetGroups"
 
 ## Deploying the CDK Project
 
@@ -56,7 +83,7 @@ This project is set up like a standard Python project. For an integrated develop
 2. Clone the github repository and navigate to the directory.
 
 ```
-$ git clone https://github.com/aws-samples/ats-ebs.git
+$ git clone https://gitlab.aws.dev/ebs_switchover/ats-ebs.git
 
 $ cd ats-ebs
 ```
