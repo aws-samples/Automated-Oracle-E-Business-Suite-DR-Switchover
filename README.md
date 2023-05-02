@@ -101,7 +101,6 @@ Once the virtualenv is activated, you can install the required dependencies.
 
 ```
 $ pip install -r requirements.txt
-
 ```
 The cdk.json file takes the input context for the stack. Update the following context variables in cdk.json before deploying this stack.
 
@@ -150,7 +149,6 @@ To deploy the stack execute the below steps
 1. Deploy the CDK stacks using the below shell script
 ```
 sh Deploy_Stack.sh
-
 ```
 2. Create the below folder in the database and application AWS EC2 instances under $HOME of the respective application and database owner os user.
 
@@ -188,5 +186,4 @@ In order to delete all the objects created by this stack execute the below shell
 
 ```
 sh Destroy_Stack.sh
-
 ```
