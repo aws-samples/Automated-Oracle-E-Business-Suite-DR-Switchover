@@ -83,9 +83,9 @@ This project is set up like a standard Python project. For an integrated develop
 2. Clone the github repository and navigate to the directory.
 
 ```
-$ git clone https://gitlab.aws.dev/ebs_switchover/ats-ebs.git
+$ git clone https://github.com/aws-samples/Automated-Oracle-E-Business-Suite-DR-Switchover.git
 
-$ cd ats-ebs
+$ cd Automated-Oracle-E-Business-Suite-DR-Switchover
 ```
 To manually create a virtualenv
 ```
