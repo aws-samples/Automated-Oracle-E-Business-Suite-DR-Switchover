@@ -28,7 +28,7 @@ This project will create the following in your AWS cloud environment specified:
 ## Prerequisite
 
 
-1.  A VPC with alteast one private subnet to deploy the automation.
+1.  A VPC with alteast one private subnet that can egress to Internet to deploy the automation.
 2.  A security group attached to the above VPC with allow all egress rule.
 3.  An AWS System Manager Parameter Store to store Oracle E-Business suite environment details
 
