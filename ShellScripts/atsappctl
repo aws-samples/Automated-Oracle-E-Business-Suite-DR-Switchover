@@ -323,7 +323,7 @@ done < apptab
 
 TG_ARN=`aws elbv2 describe-target-groups --name ${TARGET_GROUP} --region ${EC2_REGION} --query 'TargetGroups[*].[TargetGroupArn]' | grep arn | tr -d " " | sed 's/\"//g'`
 ELB_ARN=`aws elbv2 describe-load-balancers --name ${ELB_NAME} --region ${EC2_REGION} --query 'LoadBalancers[*].[LoadBalancerArn]' | grep arn | tr -d " " | sed 's/\"//g'`
-LSNR_ARN=$(aws elbv2 describe-listeners --load-balancer-arn ${ELB_ARN}  --region eu-west-1 --query Listeners[?Port=='`'${PORT_NUM}'`'].[ListenerArn] | grep arn | tr -d " " | sed 's/\"//g')
+LSNR_ARN=$(aws elbv2 describe-listeners --load-balancer-arn ${ELB_ARN}  --region ${EC2_REGION} --query Listeners[?Port=='`'${PORT_NUM}'`'].[ListenerArn] | grep arn | tr -d " " | sed 's/\"//g')
 
 
 aws elbv2 modify-listener --listener-arn ${LSNR_ARN} --default-actions Type=forward,TargetGroupArn=${TG_ARN}
