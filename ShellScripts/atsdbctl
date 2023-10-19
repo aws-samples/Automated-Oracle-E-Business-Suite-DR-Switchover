@@ -12,8 +12,7 @@
 
 LOG_FILE=$SCRIPT_DIR/logs/"erp_app_switch_log_"`date +%Y%m%d%H%M`".log"
 export LOG_FILE
-EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
-EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed 's/[a-z]$//'`"
+EC2_REGION=`aws ec2 describe-availability-zones --output text --query 'AvailabilityZones[0].[RegionName]'`
 
 USAGE="atsdbctl -target_db <TARGET_DB_NAME> -action <FETCH_PRIMARY/SWITCHOVER_DB>"
 
